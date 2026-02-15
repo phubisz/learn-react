@@ -8,6 +8,8 @@ import SchedulingRules from './components/SchedulingRules';
 import VerificationLog from './components/VerificationLog';
 import BatchApply from './components/BatchApply';
 import { verifySchedule } from './utils/scheduleVerification';
+import { exportToPDF } from './utils/exportPDF';
+import { exportToExcel } from './utils/exportExcel';
 
 // Define Leave Types outside component to avoid recreation (already optimized)
 const LEAVE_TYPES = [
@@ -245,11 +247,12 @@ function App() {
     }
   };
 
-  const handleAddEmployee = useCallback((name, maxHours = 168) => {
+  const handleAddEmployee = useCallback((name, maxHours = 168, maxHoursQuarter = 504) => {
     const newEmployee = {
       id: Date.now(),
       name: name,
-      maxHours: Number(maxHours)
+      maxHours: Number(maxHours),
+      maxHoursQuarter: Number(maxHoursQuarter),
     };
     setEmployees(prev => [...prev, newEmployee]);
   }, []);
@@ -341,7 +344,10 @@ function App() {
         // Loop through all days in current month and delete them from schedule
         for (let day = 1; day <= daysInMonth; day++) {
           const date = new Date(year, month, day);
-          const dateKey = date.toISOString().split('T')[0];
+          const y = date.getFullYear();
+          const m = String(date.getMonth() + 1).padStart(2, '0');
+          const d = String(date.getDate()).padStart(2, '0');
+          const dateKey = `${y}-${m}-${d}`;
           delete newSchedule[dateKey];
         }
         return newSchedule;
@@ -352,6 +358,24 @@ function App() {
   const handleVerifySchedule = () => {
     const issues = verifySchedule({ schedule, employees, currentDate, schedulingRules, bankHolidays });
     setVerificationIssues(issues);
+  };
+
+  const handleExportPDF = () => {
+    try {
+      exportToPDF({ employees, schedule, currentDate, bankHolidays });
+    } catch (error) {
+      console.error('Failed to export PDF:', error);
+      setSaveError('Nie udało się wyeksportować PDF. Spróbuj ponownie.');
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      exportToExcel({ employees, schedule, currentDate, bankHolidays });
+    } catch (error) {
+      console.error('Failed to export Excel:', error);
+      setSaveError('Nie udało się wyeksportować Excel. Spróbuj ponownie.');
+    }
   };
 
   const hasBlockingErrors = useMemo(() =>
@@ -495,6 +519,8 @@ function App() {
         <>
           <DataControls
             onExport={handleExportData}
+            onExportPDF={handleExportPDF}
+            onExportExcel={handleExportExcel}
             onImport={handleImportData}
             onVerifySchedule={handleVerifySchedule}
             onClearSchedule={handleClearSchedule}

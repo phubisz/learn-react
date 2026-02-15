@@ -26,7 +26,10 @@ const BatchApply = memo(({ employees, leaveTypes, shiftTemplates, onApplyBatch }
         const dateKeys = [];
         const cursor = new Date(start);
         while (cursor <= end) {
-            dateKeys.push(cursor.toISOString().split('T')[0]);
+            const y = cursor.getFullYear();
+            const m = String(cursor.getMonth() + 1).padStart(2, '0');
+            const dd = String(cursor.getDate()).padStart(2, '0');
+            dateKeys.push(`${y}-${m}-${dd}`);
             cursor.setDate(cursor.getDate() + 1);
         }
 
@@ -96,6 +99,7 @@ const BatchApply = memo(({ employees, leaveTypes, shiftTemplates, onApplyBatch }
                         <label>Od</label>
                         <input
                             type="date"
+                            lang="pl"
                             value={dateFrom}
                             onChange={(e) => setDateFrom(e.target.value)}
                         />
@@ -104,6 +108,7 @@ const BatchApply = memo(({ employees, leaveTypes, shiftTemplates, onApplyBatch }
                         <label>Do</label>
                         <input
                             type="date"
+                            lang="pl"
                             value={dateTo}
                             onChange={(e) => setDateTo(e.target.value)}
                         />

@@ -3,7 +3,10 @@ import React, { useMemo } from 'react';
 const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMonth, onNextMonth, issues, bankHolidays }) => {
     // Helper to format date as YYYY-MM-DD
     const formatDate = (date) => {
-        return date.toISOString().split('T')[0];
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
     };
 
     // Generate days for the current month
@@ -82,23 +85,49 @@ const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMo
         return { errorKeySet: errorSet, warningKeySet: warningSet, issueMessageMap: messageMap };
     }, [issues]);
 
-    // Memoize total hours calculation for all employees - only recalculate when schedule or days change
+    // Quarter date range for quarterly hours calculation
+    const quarterDays = useMemo(() => {
+        const quarterStartMonth = Math.floor(month / 3) * 3;
+        const qStart = new Date(year, quarterStartMonth, 1);
+        const qEnd = new Date(year, quarterStartMonth + 3, 0);
+        const result = [];
+        const cursor = new Date(qStart);
+        while (cursor <= qEnd) {
+            const y2 = cursor.getFullYear();
+            const m2 = String(cursor.getMonth() + 1).padStart(2, '0');
+            const d2 = String(cursor.getDate()).padStart(2, '0');
+            result.push(`${y2}-${m2}-${d2}`);
+            cursor.setDate(cursor.getDate() + 1);
+        }
+        return result;
+    }, [year, month]);
+
+    // Memoize total hours calculation for all employees (monthly + quarterly)
     const employeeHoursMap = useMemo(() => {
         const hoursMap = new Map();
 
         sortedEmployees.forEach(employee => {
-            let totalHours = 0;
+            let monthlyHours = 0;
             days.forEach(day => {
                 const shift = schedule[day.dateKey]?.[employee.id];
                 if (shift && shift.type !== 'leave') {
-                    totalHours += Number(shift.hours || 0);
+                    monthlyHours += Number(shift.hours || 0);
                 }
             });
-            hoursMap.set(employee.id, totalHours);
+
+            let quarterlyHours = 0;
+            quarterDays.forEach(dk => {
+                const shift = schedule[dk]?.[employee.id];
+                if (shift && shift.type !== 'leave') {
+                    quarterlyHours += Number(shift.hours || 0);
+                }
+            });
+
+            hoursMap.set(employee.id, { monthlyHours, quarterlyHours });
         });
 
         return hoursMap;
-    }, [schedule, days, sortedEmployees]);
+    }, [schedule, days, quarterDays, sortedEmployees]);
 
     return (
         <div className="schedule-grid">
@@ -110,7 +139,7 @@ const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMo
 
             <div className="grid-container" style={{ gridTemplateColumns: `150px repeat(${daysInMonth}, 1fr)` }}>
                 {/* Header Row */}
-                <div className="header-cell">Employee</div>
+                <div className="header-cell">Pracownik</div>
                 {days.map(day => {
                     const isHoliday = holidayMap.has(day.dateKey);
                     const holidayName = isHoliday ? holidayMap.get(day.dateKey) : '';
@@ -128,18 +157,22 @@ const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMo
 
                 {sortedEmployees.map(employee => {
                     // Get pre-calculated total hours from memoized map
-                    const totalHours = employeeHoursMap.get(employee.id) || 0;
-                    const max = employee.maxHours || 168;
-                    const isOverLimit = totalHours > max;
+                    const hours = employeeHoursMap.get(employee.id) || { monthlyHours: 0, quarterlyHours: 0 };
+                    const maxMonth = employee.maxHours || 168;
+                    const maxQuarter = employee.maxHoursQuarter || 504;
+                    const isOverMonth = hours.monthlyHours > maxMonth;
+                    const isOverQuarter = hours.quarterlyHours > maxQuarter;
 
                     return (
                         <React.Fragment key={employee.id}>
                             <div className="employee-cell">
                                 <div className="emp-name">{employee?.name || 'Unknown'}</div>
-                                <div className={`emp-stats ${isOverLimit ? 'over-limit' : ''}`}>
-                                    {totalHours} / {max}h
+                                <div className={`emp-stats ${isOverMonth ? 'over-limit' : ''}`} title="Godziny w miesiącu">
+                                    M: {hours.monthlyHours}/{maxMonth}h
                                 </div>
-
+                                <div className={`emp-stats quarter-stats ${isOverQuarter ? 'over-limit' : ''}`} title="Godziny w kwartale">
+                                    K: {hours.quarterlyHours}/{maxQuarter}h
+                                </div>
                             </div>
                             {days.map(day => {
                                 const dateKey = day?.dateKey;

@@ -12,7 +12,10 @@ function formatDateDMY(dateKey) {
 }
 
 function toDateKey(date) {
-  return date.toISOString().split('T')[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function getQuarterRange(date) {
@@ -367,9 +370,9 @@ function checkEveryFourthSundayFree(schedule, employee, currentDate) {
 
 // ─── Rule 8: All days must be marked ─────────────────────────
 
-function checkAllDaysMarked(schedule, employee, quarterRange) {
+function checkAllDaysMarked(schedule, employee, monthDays) {
   const issues = [];
-  const days = generateDays(quarterRange.start, quarterRange.end);
+  const days = monthDays;
 
   const unmarkedDates = [];
 
@@ -396,7 +399,7 @@ function checkAllDaysMarked(schedule, employee, quarterRange) {
         issue: 'unmarked_day',
         employeeId: employee.id,
         dateKeys: unmarkedDates,
-        message: `Pracownik ${employee.name} ma ${unmarkedDates.length} nieprzypisanych dni w kwartale (np. ${unmarkedDates.slice(0, 3).map(formatDateDMY).join(', ')}...).`,
+        message: `Pracownik ${employee.name} ma ${unmarkedDates.length} nieprzypisanych dni w miesiącu (np. ${unmarkedDates.slice(0, 3).map(formatDateDMY).join(', ')}...).`,
       });
     }
   }
@@ -404,27 +407,92 @@ function checkAllDaysMarked(schedule, employee, quarterRange) {
   return issues;
 }
 
-// ─── Max hours check ─────────────────────────────────────────
+// ─── Rule 9: Holiday (ŚW) compensation ───────────────────────
 
-function checkMaxHours(schedule, employee, days) {
+function checkHolidayCompensation(schedule, employee, quarterRange, bankHolidays, currentDate) {
   const issues = [];
-  let totalHours = 0;
+  if (!bankHolidays || bankHolidays.length === 0) return issues;
+
+  const days = generateDays(quarterRange.start, quarterRange.end);
+  const holidaySet = new Set(bankHolidays.map(h => h.date));
+
+  let workedHolidays = 0;
+  let swCount = 0;
+  const workedHolidayDates = [];
 
   days.forEach((day) => {
     const shift = schedule?.[day.dateKey]?.[employee.id];
-    if (shift && shift.type !== 'leave') {
-      totalHours += Number(shift.hours || 0);
+    if (!shift) return;
+
+    if (holidaySet.has(day.dateKey) && shift.type !== 'leave') {
+      workedHolidays++;
+      workedHolidayDates.push(day.dateKey);
+    }
+
+    if (shift.id === 'ŚW' || shift.id === 'WŚ') {
+      swCount++;
     }
   });
 
-  const max = employee.maxHours || 168;
-  if (totalHours > max) {
+  if (workedHolidays > swCount) {
+    const missing = workedHolidays - swCount;
+    const lastMonth = isLastMonthOfQuarter(currentDate);
+    issues.push({
+      type: lastMonth ? 'error' : 'warning',
+      issue: 'holiday_compensation',
+      blocking: lastMonth,
+      employeeId: employee.id,
+      dateKeys: workedHolidayDates,
+      message: `Pracownik ${employee.name} pracował w ${workedHolidays} święto/a w kwartale, ale ma tylko ${swCount} dni ŚW. Brakuje ${missing} rekompensaty.${lastMonth ? ' (ostatni miesiąc kwartału!)' : ''}`,
+    });
+  }
+
+  return issues;
+}
+
+// ─── Max hours check ─────────────────────────────────────────
+
+function checkMaxHours(schedule, employee, monthDays, quarterRange) {
+  const issues = [];
+
+  // Monthly check
+  let monthlyHours = 0;
+  monthDays.forEach((day) => {
+    const shift = schedule?.[day.dateKey]?.[employee.id];
+    if (shift && shift.type !== 'leave') {
+      monthlyHours += Number(shift.hours || 0);
+    }
+  });
+
+  const maxMonth = employee.maxHours || 168;
+  if (monthlyHours > maxMonth) {
     issues.push({
       type: 'error',
       issue: 'max_hours',
       employeeId: employee.id,
       dateKeys: [],
-      message: `Przekroczony limit godzin dla pracownika ${employee.name}: ${totalHours}/${max}h.`,
+      message: `Przekroczony miesięczny limit godzin dla pracownika ${employee.name}: ${monthlyHours}/${maxMonth}h.`,
+    });
+  }
+
+  // Quarterly check
+  const quarterDays = generateDays(quarterRange.start, quarterRange.end);
+  let quarterlyHours = 0;
+  quarterDays.forEach((day) => {
+    const shift = schedule?.[day.dateKey]?.[employee.id];
+    if (shift && shift.type !== 'leave') {
+      quarterlyHours += Number(shift.hours || 0);
+    }
+  });
+
+  const maxQuarter = employee.maxHoursQuarter || 504;
+  if (quarterlyHours > maxQuarter) {
+    issues.push({
+      type: 'error',
+      issue: 'max_hours_quarter',
+      employeeId: employee.id,
+      dateKeys: [],
+      message: `Przekroczony kwartalny limit godzin dla pracownika ${employee.name}: ${quarterlyHours}/${maxQuarter}h.`,
     });
   }
 
@@ -433,7 +501,7 @@ function checkMaxHours(schedule, employee, days) {
 
 // ─── Main verification function ──────────────────────────────
 
-export function verifySchedule({ schedule, employees, currentDate, schedulingRules }) {
+export function verifySchedule({ schedule, employees, currentDate, schedulingRules, bankHolidays }) {
   const issues = [];
 
   if (!employees || !Array.isArray(employees)) {
@@ -450,8 +518,8 @@ export function verifySchedule({ schedule, employees, currentDate, schedulingRul
     // Rule 3: Rest between shifts (check current month)
     issues.push(...checkRestBetweenShifts(schedule, emp, monthDays, schedulingRules));
 
-    // Max hours (current month)
-    issues.push(...checkMaxHours(schedule, emp, monthDays));
+    // Max hours (monthly + quarterly)
+    issues.push(...checkMaxHours(schedule, emp, monthDays, quarterRange));
 
     // Rule 4: Weekly rest 35h (quarter-wide)
     issues.push(...checkWeeklyRest(schedule, emp, quarterRange, schedulingRules));
@@ -471,10 +539,13 @@ export function verifySchedule({ schedule, employees, currentDate, schedulingRul
       issues.push(...checkEveryFourthSundayFree(schedule, emp, currentDate));
     }
 
-    // Rule 8: All days marked (quarter-wide)
+    // Rule 8: All days marked (current month only)
     if (schedulingRules?.checkUnmarkedDays !== false) {
-      issues.push(...checkAllDaysMarked(schedule, emp, quarterRange));
+      issues.push(...checkAllDaysMarked(schedule, emp, monthDays));
     }
+
+    // Rule 9: Holiday ŚW compensation (quarter-wide)
+    issues.push(...checkHolidayCompensation(schedule, emp, quarterRange, bankHolidays, currentDate));
   });
 
   if (issues.length === 0) {

@@ -162,6 +162,7 @@ const SchedulingRules = memo(({ rules, onUpdateRules, bankHolidays, onUpdateHoli
             <div className="holiday-add-form">
                 <input
                     type="date"
+                    lang="pl"
                     value={newHolidayDate}
                     onChange={(e) => setNewHolidayDate(e.target.value)}
                     className="holiday-date-input"

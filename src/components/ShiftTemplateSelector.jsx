@@ -190,13 +190,13 @@ const ShiftTemplateSelector = ({ templates, leaveTypes, selectedTemplate, onSele
                             />
                             <div className="row">
                                 <div className="input-group">
-                                    <label>Type:</label>
+                                    <label>Typ:</label>
                                     <select
                                         value={templateForm.type}
                                         onChange={e => setTemplateForm({ ...templateForm, type: e.target.value })}
                                     >
-                                        <option value="day">Day (☀️)</option>
-                                        <option value="night">Night (🌙)</option>
+                                        <option value="day">Dzień ☀️</option>
+                                        <option value="night">Noc 🌙</option>
                                     </select>
                                 </div>
                             </div>

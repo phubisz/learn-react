@@ -396,9 +396,14 @@
 }
 
 .emp-stats {
-  font-size: 11px;
+  font-size: 10px;
   color: #666;
   font-weight: normal;
+  line-height: 1.3;
+}
+
+.emp-stats.quarter-stats {
+  color: #888;
 }
 
 .emp-stats.over-limit {
