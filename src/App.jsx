@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import './App.css';
 import EmployeeList from './components/EmployeeList';
 import ScheduleGrid from './components/ScheduleGrid';
@@ -6,6 +6,8 @@ import ShiftTemplateSelector from './components/ShiftTemplateSelector';
 import DataControls from './components/DataControls';
 import SchedulingRules from './components/SchedulingRules';
 import VerificationLog from './components/VerificationLog';
+import BatchApply from './components/BatchApply';
+import { verifySchedule } from './utils/scheduleVerification';
 
 // Define Leave Types outside component to avoid recreation (already optimized)
 const LEAVE_TYPES = [
@@ -16,7 +18,39 @@ const LEAVE_TYPES = [
   { id: 'WN', symbol: 'WN', title: 'Dzień wolny za pracę w niedzielę', type: 'leave' },
   { id: 'WŚ', symbol: 'WŚ', title: 'Dzień wolny za pracę w święto', type: 'leave' },
   { id: 'WW', symbol: 'WW', title: 'Dzień wolny za pracę w dniu wolnym', type: 'leave' },
+  { id: 'CH', symbol: 'CH', title: 'Chorobowe (zwolnienie lekarskie)', type: 'leave' },
+  { id: 'UW', symbol: 'UW', title: 'Urlop wypoczynkowy', type: 'leave' },
+  { id: 'UŻ', symbol: 'UŻ', title: 'Urlop na żądanie', type: 'leave' },
+  { id: 'UM', symbol: 'UM', title: 'Urlop macierzyński', type: 'leave' },
 ];
+
+const DEFAULT_HOLIDAYS = [
+  { date: '2026-01-01', name: 'Nowy Rok' },
+  { date: '2026-01-06', name: 'Trzech Króli' },
+  { date: '2026-04-05', name: 'Wielkanoc' },
+  { date: '2026-04-06', name: 'Poniedziałek Wielkanocny' },
+  { date: '2026-05-01', name: 'Święto Pracy' },
+  { date: '2026-05-03', name: 'Święto Konstytucji 3 Maja' },
+  { date: '2026-05-24', name: 'Zesłanie Ducha Świętego' },
+  { date: '2026-06-04', name: 'Boże Ciało' },
+  { date: '2026-08-15', name: 'Wniebowzięcie NMP' },
+  { date: '2026-11-01', name: 'Wszystkich Świętych' },
+  { date: '2026-11-11', name: 'Święto Niepodległości' },
+  { date: '2026-12-25', name: 'Boże Narodzenie' },
+  { date: '2026-12-26', name: 'Drugi dzień Bożego Narodzenia' },
+];
+
+const DEFAULT_RULES = {
+  hoursAfterDay: 24,
+  hoursAfterNight: 48,
+  sundayRuleEnabled: true,
+  sundayRuleDays: 6,
+  weeklyRestHours: 35,
+  saturdayCompensation: true,
+  sundayCompensationStrict: true,
+  fourthSundayRule: true,
+  checkUnmarkedDays: true,
+};
 
 function App() {
   const [employees, setEmployees] = useState(() => {
@@ -66,20 +100,20 @@ function App() {
   const [schedulingRules, setSchedulingRules] = useState(() => {
     try {
       const saved = localStorage.getItem('schedulingRules');
-      return saved ? JSON.parse(saved) : {
-        hoursAfterDay: 24,
-        hoursAfterNight: 48,
-        sundayRuleEnabled: true,
-        sundayRuleDays: 6
-      };
+      return saved ? { ...DEFAULT_RULES, ...JSON.parse(saved) } : DEFAULT_RULES;
     } catch (error) {
       console.error('Failed to load scheduling rules from localStorage:', error);
-      return {
-        hoursAfterDay: 24,
-        hoursAfterNight: 48,
-        sundayRuleEnabled: true,
-        sundayRuleDays: 6
-      };
+      return DEFAULT_RULES;
+    }
+  });
+
+  const [bankHolidays, setBankHolidays] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bankHolidays');
+      return saved ? JSON.parse(saved) : DEFAULT_HOLIDAYS;
+    } catch (error) {
+      console.error('Failed to load bank holidays from localStorage:', error);
+      return DEFAULT_HOLIDAYS;
     }
   });
 
@@ -130,6 +164,16 @@ function App() {
   }, [schedulingRules]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem('bankHolidays', JSON.stringify(bankHolidays));
+      setSaveError(null);
+    } catch (error) {
+      console.error('Failed to save bank holidays:', error);
+      setSaveError('Nie udało się zapisać dni świątecznych. Sprawdź czy masz wystarczająco miejsca w przeglądarce.');
+    }
+  }, [bankHolidays]);
+
+  useEffect(() => {
     if (!shiftTemplates || shiftTemplates.length === 0) {
       if (selectedTemplate !== null) setSelectedTemplate(null);
       return;
@@ -164,7 +208,8 @@ function App() {
         employees,
         schedule,
         shiftTemplates,
-        schedulingRules
+        schedulingRules,
+        bankHolidays
       };
       const json = JSON.stringify(data, null, 2);
       const blob = new Blob([json], { type: 'application/json' });
@@ -192,6 +237,7 @@ function App() {
       if (data.schedulingRules && typeof data.schedulingRules === 'object') {
         setSchedulingRules(data.schedulingRules);
       }
+      if (data.bankHolidays && Array.isArray(data.bankHolidays)) setBankHolidays(data.bankHolidays);
       setSaveError(null);
     } catch (error) {
       console.error('Failed to import data:', error);
@@ -304,173 +350,14 @@ function App() {
   }, [currentDate]);
 
   const handleVerifySchedule = () => {
-    const formatDateDMY = (dateKey) => {
-      if (!dateKey || typeof dateKey !== 'string') return '??-??-????';
-      const parts = dateKey.split('-');
-      if (parts.length !== 3) return dateKey;
-      const [y, m, d] = parts;
-      return `${d}-${m}-${y}`;
-    };
-
-    const issues = [];
-    const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-    const days = Array.from({ length: daysInMonth }, (_, i) => {
-      const d = new Date(currentDate.getFullYear(), currentDate.getMonth(), i + 1);
-      return {
-        dateKey: d.toISOString().split('T')[0],
-        dayNum: i + 1,
-        isSunday: d.getDay() === 0
-      };
-    });
-
-    if (!employees || !Array.isArray(employees)) {
-      issues.push({ type: 'error', message: 'Brak listy pracowników do weryfikacji.' });
-      setVerificationIssues(issues);
-      return;
-    }
-
-    employees.forEach(emp => {
-      if (!emp || !emp.id) return; // Skip invalid employee entries
-      let totalHours = 0;
-      let previousShiftEnd = null;
-      let previousShiftType = null;
-      let sundayWorkDates = [];
-
-      days.forEach((day, index) => {
-        if (!day || !day.dateKey) return; // Skip invalid day entries
-
-        const dateKey = day.dateKey;
-        const shift = schedule?.[dateKey]?.[emp.id];
-
-        if (shift) {
-          // Check for 'leave' type which counts as 0 hours usually, but let's be safe
-          if (shift.type !== 'leave') {
-            totalHours += Number(shift?.hours || 0);
-
-            if (previousShiftEnd) {
-              const startT = shift?.startTime || (shift?.type === 'day' ? '07:00' : '19:00');
-              const endT = shift?.endTime || (shift?.type === 'day' ? '19:00' : '07:00');
-
-              // Validate time strings before creating Date
-              if (!startT || !endT) {
-                console.warn(`Invalid shift times for employee ${emp.name} on ${dateKey}`);
-                return;
-              }
-
-              const currentShiftStart = new Date(`${dateKey}T${startT}`);
-
-              // Validate date creation
-              if (isNaN(currentShiftStart.getTime())) {
-                console.warn(`Invalid date created for ${dateKey}T${startT}`);
-                return;
-              }
-
-              const diffMinutes = (currentShiftStart - previousShiftEnd) / (1000 * 60);
-              const diffHours = diffMinutes / 60;
-
-              // Determine required break based on previous shift type
-              let requiredBreak = 11; // Statutory minimum
-              if (previousShiftType === 'night') {
-                requiredBreak = Number(schedulingRules?.hoursAfterNight) || 11;
-              } else if (previousShiftType === 'day') {
-                requiredBreak = Number(schedulingRules?.hoursAfterDay) || 11;
-              }
-
-              if (diffHours < requiredBreak && index > 0) {
-                const prevDay = days[index - 1];
-                issues.push({
-                  type: 'error',
-                  issue: 'insufficient_rest',
-                  employeeId: emp.id,
-                  dateKeys: [prevDay?.dateKey || dateKey, dateKey],
-                  message: `Brak wymaganego odpoczynku (${requiredBreak}h) dla pracownika ${emp?.name || 'Unknown'}. Odpoczynek wynosił tylko ${diffHours.toFixed(1)}h między ${formatDateDMY(prevDay?.dateKey)} a ${formatDateDMY(dateKey)}.`
-                });
-              }
-            }
-
-            // Set current shift end for next iteration
-            const startT = shift?.startTime || (shift?.type === 'day' ? '07:00' : '19:00');
-            const endT = shift?.endTime || (shift?.type === 'day' ? '19:00' : '07:00');
-
-            if (startT && endT) {
-              let shiftEnd = new Date(`${dateKey}T${endT}`);
-              if (!isNaN(shiftEnd.getTime())) {
-                if ((Number(shift?.hours || 0) > 0 || shift?.type === 'night') && endT < startT) {
-                  // Overnight shift, ends next day
-                  shiftEnd.setDate(shiftEnd.getDate() + 1);
-                }
-                previousShiftEnd = shiftEnd;
-                previousShiftType = shift?.type;
-              }
-            }
-
-            // Sunday Check Collection
-            if (day.isSunday) {
-              sundayWorkDates.push({ dateKey, index });
-            }
-          } else {
-            // It's a leave day, reset previous shift end tracker as break is assured
-            previousShiftEnd = null;
-          }
-        } else {
-          // No shift, implies break
-          previousShiftEnd = null;
-        }
-      });
-
-      // 1. Max Hours Check
-      const max = emp?.maxHours || 168;
-      if (totalHours > max) {
-        issues.push({
-          type: 'error',
-          message: `Przekroczony limit godzin dla pracownika ${emp?.name || 'Unknown'}: ${totalHours}/${max}h.`
-        });
-      }
-
-      // 3. Sunday Rule Check (if enabled)
-      if (schedulingRules?.sundayRuleEnabled && Array.isArray(sundayWorkDates)) {
-        const range = schedulingRules?.sundayRuleDays || 6;
-        sundayWorkDates.forEach(({ dateKey, index }) => {
-          if (!dateKey || typeof index !== 'number') return;
-
-          // Check range +/- X days for a free day (no shift assigned)
-          // Simple heuristic: Look for at least one day without a shift or with a 'leave' shift
-          let hasFreeDay = false;
-          const startSearch = Math.max(0, index - range);
-          const endSearch = Math.min(days.length - 1, index + range);
-
-          for (let i = startSearch; i <= endSearch; i++) {
-            if (i === index) continue; // Skip the Sunday itself
-            const dayAtIndex = days[i];
-            if (!dayAtIndex || !dayAtIndex.dateKey) continue;
-
-            const dKey = dayAtIndex.dateKey;
-            const s = schedule?.[dKey]?.[emp.id];
-            if (!s || s?.type === 'leave') {
-              hasFreeDay = true;
-              break;
-            }
-          }
-
-          if (!hasFreeDay) {
-            issues.push({
-              type: 'warning',
-              issue: 'sunday_rule',
-              employeeId: emp.id,
-              dateKeys: [dateKey],
-              message: `Pracownik ${emp?.name || 'Unknown'} pracuje w niedzielę (${formatDateDMY(dateKey)}) i nie ma dnia wolnego w ciągu +/- ${range} dni.`
-            });
-          }
-        });
-      }
-    });
-
-    if (issues.length === 0) {
-      issues.push({ type: 'success', message: 'Weryfikacja zakończona pomyślnie. Brak błędów.' });
-    }
-
+    const issues = verifySchedule({ schedule, employees, currentDate, schedulingRules, bankHolidays });
     setVerificationIssues(issues);
   };
+
+  const hasBlockingErrors = useMemo(() =>
+    verificationIssues.some(issue => issue.blocking),
+    [verificationIssues]
+  );
 
   const handleUpdateEmployee = useCallback((id, field, value) => {
     setEmployees(prev => prev.map(emp =>
@@ -506,6 +393,18 @@ function App() {
       };
     });
   }, [selectedTemplate]);
+
+  const handleBatchApply = useCallback((dateKeys, employeeId, template) => {
+    setSchedule(prev => {
+      const newSchedule = { ...prev };
+      dateKeys.forEach(dateKey => {
+        const daySchedule = { ...(newSchedule[dateKey] || {}) };
+        daySchedule[employeeId] = template;
+        newSchedule[dateKey] = daySchedule;
+      });
+      return newSchedule;
+    });
+  }, []);
 
   const [activeTab, setActiveTab] = useState('planning');
 
@@ -556,11 +455,19 @@ function App() {
           <SchedulingRules
             rules={schedulingRules}
             onUpdateRules={setSchedulingRules}
+            bankHolidays={bankHolidays}
+            onUpdateHolidays={setBankHolidays}
           />
         )}
 
         {activeTab === 'planning' && (
           <>
+            <BatchApply
+              employees={employees}
+              leaveTypes={LEAVE_TYPES}
+              shiftTemplates={shiftTemplates}
+              onApplyBatch={handleBatchApply}
+            />
             <ShiftTemplateSelector
               templates={shiftTemplates}
               leaveTypes={LEAVE_TYPES}
@@ -578,23 +485,26 @@ function App() {
               onPrevMonth={handlePrevMonth}
               onNextMonth={handleNextMonth}
               issues={verificationIssues}
+              bankHolidays={bankHolidays}
             />
           </>
         )}
       </div>
 
-      <DataControls
-        onExport={handleExportData}
-        onImport={handleImportData}
-        onVerifySchedule={handleVerifySchedule}
-        onClearSchedule={handleClearSchedule}
-      />
+      {activeTab === 'planning' && (
+        <>
+          <DataControls
+            onExport={handleExportData}
+            onImport={handleImportData}
+            onVerifySchedule={handleVerifySchedule}
+            onClearSchedule={handleClearSchedule}
+            exportDisabled={hasBlockingErrors}
+          />
 
-      <VerificationLog issues={verificationIssues} />
+          <VerificationLog issues={verificationIssues} />
+        </>
+      )}
 
-      <div className="debug-config">
-        <p>Debug: Zasada niedzieli: {schedulingRules.sundayRuleEnabled ? 'Włączona' : 'Wyłączona'} ({schedulingRules.sundayRuleDays} dni)</p>
-      </div>
     </div>
   );
 }

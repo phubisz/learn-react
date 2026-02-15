@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 
-const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMonth, onNextMonth, issues }) => {
+const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMonth, onNextMonth, issues, bankHolidays }) => {
     // Helper to format date as YYYY-MM-DD
     const formatDate = (date) => {
         return date.toISOString().split('T')[0];
@@ -32,6 +32,17 @@ const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMo
         return result;
     }, [year, month, daysInMonth]);
 
+    // Memoize holiday lookup - set of dateKeys that are bank holidays
+    const holidayMap = useMemo(() => {
+        const map = new Map();
+        if (bankHolidays && bankHolidays.length > 0) {
+            bankHolidays.forEach(h => {
+                if (h.date) map.set(h.date, h.name);
+            });
+        }
+        return map;
+    }, [bankHolidays]);
+
     // Memoize month name - only recalculate when currentDate changes
     const monthName = useMemo(() => {
         const monthNameRaw = currentDate.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
@@ -44,17 +55,22 @@ const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMo
     }, [employees]);
 
     // Memoize issue maps - only recalculate when issues change
-    const { issueKeySet, issueMessageMap } = useMemo(() => {
-        const keySet = new Set();
+    const { errorKeySet, warningKeySet, issueMessageMap } = useMemo(() => {
+        const errorSet = new Set();
+        const warningSet = new Set();
         const messageMap = new Map();
 
         if (issues && issues.length > 0) {
             issues.forEach((issue) => {
-                if (!issue || issue.type !== 'error') return;
-                if (!issue.employeeId || !issue.dateKeys) return;
+                if (!issue || !issue.employeeId || !issue.dateKeys) return;
+                if (issue.type !== 'error' && issue.type !== 'warning') return;
                 issue.dateKeys.forEach((dateKey) => {
                     const key = `${dateKey}-${issue.employeeId}`;
-                    keySet.add(key);
+                    if (issue.type === 'error') {
+                        errorSet.add(key);
+                    } else {
+                        warningSet.add(key);
+                    }
                     if (!messageMap.has(key)) {
                         messageMap.set(key, []);
                     }
@@ -63,7 +79,7 @@ const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMo
             });
         }
 
-        return { issueKeySet: keySet, issueMessageMap: messageMap };
+        return { errorKeySet: errorSet, warningKeySet: warningSet, issueMessageMap: messageMap };
     }, [issues]);
 
     // Memoize total hours calculation for all employees - only recalculate when schedule or days change
@@ -95,12 +111,20 @@ const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMo
             <div className="grid-container" style={{ gridTemplateColumns: `150px repeat(${daysInMonth}, 1fr)` }}>
                 {/* Header Row */}
                 <div className="header-cell">Employee</div>
-                {days.map(day => (
-                    <div key={day.dateKey} className={`header-cell ${day.isWeekend ? 'weekend' : ''}`}>
-                        <div>{day.dayNum}</div>
-                        <div className="day-name">{day.dayName}</div>
-                    </div>
-                ))}
+                {days.map(day => {
+                    const isHoliday = holidayMap.has(day.dateKey);
+                    const holidayName = isHoliday ? holidayMap.get(day.dateKey) : '';
+                    return (
+                        <div
+                            key={day.dateKey}
+                            className={`header-cell ${day.isWeekend ? 'weekend' : ''} ${isHoliday ? 'holiday' : ''}`}
+                            title={holidayName}
+                        >
+                            <div>{day.dayNum}</div>
+                            <div className="day-name">{day.dayName}</div>
+                        </div>
+                    );
+                })}
 
                 {sortedEmployees.map(employee => {
                     // Get pre-calculated total hours from memoized map
@@ -124,18 +148,22 @@ const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMo
                                 const shift = schedule?.[dateKey]?.[employee.id] || null;
 
                                 const issueKey = `${dateKey}-${employee.id}`;
-                                const isIssue = issueKeySet.has(issueKey);
-                                const issueMessage = isIssue ? issueMessageMap.get(issueKey)?.join('\n') : '';
+                                const isError = errorKeySet.has(issueKey);
+                                const isWarning = warningKeySet.has(issueKey);
+                                const hasIssue = isError || isWarning;
+                                const issueMessage = hasIssue ? issueMessageMap.get(issueKey)?.join('\n') : '';
 
                                 // Safe shift property access with fallbacks
                                 const shiftTitle = shift?.type === 'leave'
                                     ? (shift?.title || shift?.name || 'Leave')
                                     : `${shift?.name || 'Shift'} (${shift?.startTime || '??:??'}-${shift?.endTime || '??:??'})`;
 
+                                const isCellHoliday = holidayMap.has(dateKey);
+
                                 return (
-                                    <div key={`${dateKey}-${employee.id}`} className={`shift-cell ${day?.isWeekend ? 'weekend-cell' : ''}`}>
+                                    <div key={`${dateKey}-${employee.id}`} className={`shift-cell ${day?.isWeekend ? 'weekend-cell' : ''} ${isCellHoliday ? 'holiday-cell' : ''}`}>
                                         <button
-                                            className={`shift-button ${shift?.type || ''} ${isIssue ? 'issue' : ''}`}
+                                            className={`shift-button ${shift?.type || ''} ${isError ? 'issue' : ''} ${isWarning ? 'warning' : ''}`}
                                             onClick={() => onApplyShift(dateKey, employee.id)}
                                             title={shift ? shiftTitle : 'Assign Shift'}
                                         >
@@ -153,9 +181,9 @@ const ScheduleGrid = ({ employees, schedule, onApplyShift, currentDate, onPrevMo
                                                 )
                                             ) : ''}
                                         </button>
-                                        {isIssue && (
-                                            <span className="issue-badge" data-issue={issueMessage} aria-label={issueMessage} role="note">
-                                                i
+                                        {hasIssue && (
+                                            <span className={`issue-badge ${isWarning && !isError ? 'warning-badge' : ''}`} data-issue={issueMessage} aria-label={issueMessage} role="note">
+                                                {isError ? '!' : '?'}
                                             </span>
                                         )}
                                     </div>

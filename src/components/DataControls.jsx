@@ -1,6 +1,6 @@
 import React, { useRef, memo } from 'react';
 
-const DataControls = memo(({ onExport, onImport, onVerifySchedule, onClearSchedule }) => {
+const DataControls = memo(({ onExport, onImport, onVerifySchedule, onClearSchedule, exportDisabled }) => {
     const fileInputRef = useRef(null);
 
     const handleFileChange = (e) => {
@@ -46,12 +46,17 @@ const DataControls = memo(({ onExport, onImport, onVerifySchedule, onClearSchedu
     return (
         <div className="data-controls">
             <div className="left-controls">
-                <button onClick={onClearSchedule} className="clear-btn">🗑️ Clear</button>
+                <button onClick={onClearSchedule} className="clear-btn">🗑️ Wyczyść</button>
                 <button onClick={onVerifySchedule} className="verify-btn">✅ Zweryfikuj</button>
             </div>
             <div className="file-actions">
-                <button onClick={onExport} className="export-btn">💾 Save to File</button>
-                <button onClick={() => fileInputRef.current.click()} className="import-btn">📂 Load from File</button>
+                <button
+                    onClick={onExport}
+                    className="export-btn"
+                    disabled={exportDisabled}
+                    title={exportDisabled ? 'Napraw błędy przed eksportem' : ''}
+                >💾 Zapisz do pliku</button>
+                <button onClick={() => fileInputRef.current.click()} className="import-btn">📂 Wczytaj z pliku</button>
             </div>
             <input
                 type="file"
