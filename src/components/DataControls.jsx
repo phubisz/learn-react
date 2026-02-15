@@ -1,23 +1,46 @@
-import React, { useRef } from 'react';
+import React, { useRef, memo } from 'react';
 
-const DataControls = ({ onExport, onImport, onVerifySchedule, onClearSchedule }) => {
+const DataControls = memo(({ onExport, onImport, onVerifySchedule, onClearSchedule }) => {
     const fileInputRef = useRef(null);
 
     const handleFileChange = (e) => {
         const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try {
-                    const data = JSON.parse(event.target.result);
-                    onImport(data);
-                } catch (error) {
-                    alert('Error parsing JSON file');
-                    console.error(error);
-                }
-            };
-            reader.readAsText(file);
+        if (!file) return;
+
+        // Validate file type
+        if (!file.name.endsWith('.json')) {
+            alert('Błąd: Wybierz plik JSON (.json)');
+            return;
         }
+
+        // Validate file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            alert('Błąd: Plik jest za duży (maksymalnie 10MB)');
+            return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onerror = () => {
+            alert('Błąd podczas wczytywania pliku. Spróbuj ponownie.');
+            console.error('FileReader error:', reader.error);
+        };
+
+        reader.onload = (event) => {
+            try {
+                const data = JSON.parse(event.target.result);
+                onImport(data);
+                alert('Dane zostały pomyślnie zaimportowane!');
+            } catch (error) {
+                alert('Błąd: Nieprawidłowy format pliku JSON. Sprawdź czy plik nie jest uszkodzony.');
+                console.error('JSON parse error:', error);
+            }
+        };
+
+        reader.readAsText(file);
+
+        // Reset input so the same file can be selected again
+        e.target.value = '';
     };
 
     return (
@@ -40,6 +63,6 @@ const DataControls = ({ onExport, onImport, onVerifySchedule, onClearSchedule })
 
         </div>
     );
-};
+});
 
 export default DataControls;

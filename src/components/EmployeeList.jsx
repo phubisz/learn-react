@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 
-const EmployeeList = ({ employees, onAddEmployee, onRemoveEmployee, onUpdateEmployee }) => {
+const EmployeeList = memo(({ employees, onAddEmployee, onRemoveEmployee, onUpdateEmployee }) => {
     const [newEmployeeName, setNewEmployeeName] = useState('');
     const [maxHours, setMaxHours] = useState(168);
 
     const handleAddClick = () => {
-        if (newEmployeeName.trim() === '') return;
-        onAddEmployee(newEmployeeName, maxHours);
+        if (!newEmployeeName || newEmployeeName.trim() === '') return;
+        if (onAddEmployee) {
+            onAddEmployee(newEmployeeName.trim(), maxHours);
+        }
         setNewEmployeeName('');
         setMaxHours(168);
     };
@@ -35,26 +37,32 @@ const EmployeeList = ({ employees, onAddEmployee, onRemoveEmployee, onUpdateEmpl
             </div>
 
             <ul className="employees-ul">
-                {employees.map(emp => (
-                    <li key={emp.id} className="employee-li">
-                        <span className="emp-name">{emp.name}</span>
-                        <div className="emp-limit-edit" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <label style={{ fontSize: '0.9em' }}>Max:</label>
-                            <input
-                                type="number"
-                                value={emp.maxHours || 168}
-                                onChange={(e) => onUpdateEmployee && onUpdateEmployee(emp.id, 'maxHours', Number(e.target.value))}
-                                style={{ width: '60px', padding: '2px' }}
-                            />
-                            <span>h</span>
-                        </div>
-                        <button onClick={() => onRemoveEmployee(emp.id)} className="remove-btn">Usuń</button>
-                    </li>
-                ))}
+                {(employees || []).map(emp => {
+                    if (!emp || !emp.id) return null;
+
+                    return (
+                        <li key={emp.id} className="employee-li">
+                            <span className="emp-name">{emp?.name || 'Unknown'}</span>
+                            <div className="emp-limit-edit" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <label style={{ fontSize: '0.9em' }}>Max:</label>
+                                <input
+                                    type="number"
+                                    value={emp?.maxHours || 168}
+                                    onChange={(e) => onUpdateEmployee?.(emp.id, 'maxHours', Number(e?.target?.value || 168))}
+                                    style={{ width: '60px', padding: '2px' }}
+                                    min="0"
+                                    max="744"
+                                />
+                                <span>h</span>
+                            </div>
+                            <button onClick={() => onRemoveEmployee?.(emp.id)} className="remove-btn">Usuń</button>
+                        </li>
+                    );
+                })}
             </ul>
 
         </div>
     );
-};
+});
 
 export default EmployeeList;

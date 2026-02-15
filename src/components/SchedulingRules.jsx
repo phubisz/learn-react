@@ -1,16 +1,15 @@
-import React from 'react';
+import React, { memo } from 'react';
 
-const SchedulingRules = ({ rules, onUpdateRules }) => {
+const SchedulingRules = memo(({ rules, onUpdateRules }) => {
     const handleChange = (field, value) => {
+        if (!field || !onUpdateRules) return;
+
         // value needs to be a number, default to 0 if empty
         const numValue = parseInt(value, 10);
         if (!isNaN(numValue) && numValue >= 0) {
             onUpdateRules({ ...rules, [field]: numValue });
-        } else if (value === '') {
-            // allow empty string during typing, but handled by state typically staying valid or validating on blur
-            // simple approach: just don't update if invalid, or default 0
-            // Let's stick to valid positive numbers
         }
+        // Silently ignore invalid values during typing
     };
 
     return (
@@ -25,9 +24,10 @@ const SchedulingRules = ({ rules, onUpdateRules }) => {
                 <label>Minimalna przerwa po zmianie DZIENNEJ (godziny):</label>
                 <input
                     type="number"
-                    value={rules.hoursAfterDay}
-                    onChange={(e) => handleChange('hoursAfterDay', e.target.value)}
+                    value={rules?.hoursAfterDay ?? 24}
+                    onChange={(e) => handleChange('hoursAfterDay', e?.target?.value)}
                     min="0"
+                    max="168"
                 />
             </div>
 
@@ -35,9 +35,10 @@ const SchedulingRules = ({ rules, onUpdateRules }) => {
                 <label>Minimalna przerwa po zmianie NOCNEJ (godziny):</label>
                 <input
                     type="number"
-                    value={rules.hoursAfterNight}
-                    onChange={(e) => handleChange('hoursAfterNight', e.target.value)}
+                    value={rules?.hoursAfterNight ?? 48}
+                    onChange={(e) => handleChange('hoursAfterNight', e?.target?.value)}
                     min="0"
+                    max="168"
                 />
             </div>
 
@@ -47,27 +48,28 @@ const SchedulingRules = ({ rules, onUpdateRules }) => {
                 <label className="checkbox-label">
                     <input
                         type="checkbox"
-                        checked={rules.sundayRuleEnabled ?? true}
-                        onChange={(e) => onUpdateRules({ ...rules, sundayRuleEnabled: e.target.checked })}
+                        checked={rules?.sundayRuleEnabled ?? true}
+                        onChange={(e) => onUpdateRules?.({ ...rules, sundayRuleEnabled: e?.target?.checked ?? true })}
                     />
                     Zasada wolnej niedzieli (wymagany dzień wolny)
                 </label>
             </div>
 
-            {(rules.sundayRuleEnabled ?? true) && (
+            {(rules?.sundayRuleEnabled ?? true) && (
                 <div className="rule-item nested">
                     <label>Wymagany dzień wolny w ciągu +/- dni:</label>
                     <input
                         type="number"
-                        value={rules.sundayRuleDays ?? 6}
-                        onChange={(e) => handleChange('sundayRuleDays', e.target.value)}
+                        value={rules?.sundayRuleDays ?? 6}
+                        onChange={(e) => handleChange('sundayRuleDays', e?.target?.value)}
                         min="1"
+                        max="31"
                     />
                 </div>
             )}
 
         </div>
     );
-};
+});
 
 export default SchedulingRules;

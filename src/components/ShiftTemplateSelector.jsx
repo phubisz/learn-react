@@ -1,6 +1,42 @@
-import { useState } from 'react';
-import sunIcon from '../assets/sun-solid.svg';
-import moonIcon from '../assets/moon-solid.svg';
+import { useState, useMemo } from 'react';
+
+// TimeSelect component - defined outside to avoid re-creation on each render
+const TimeSelect = ({ label, value, onChange }) => {
+    const parts = value && typeof value === 'string' ? value.split(':') : ['07', '00'];
+    const [hours = '07', minutes = '00'] = parts;
+
+    const handleHourChange = (e) => {
+        if (onChange) {
+            onChange(`${e?.target?.value || '07'}:${minutes}`);
+        }
+    };
+
+    const handleMinuteChange = (e) => {
+        if (onChange) {
+            onChange(`${hours}:${e?.target?.value || '00'}`);
+        }
+    };
+
+    return (
+        <div className="input-group">
+            <label>{label}</label>
+            <div className="time-select-container">
+                <select value={hours} onChange={handleHourChange} className="time-select">
+                    {Array.from({ length: 24 }, (_, i) => {
+                        const h = i.toString().padStart(2, '0');
+                        return <option key={h} value={h}>{h}</option>;
+                    })}
+                </select>
+                <span className="time-separator">:</span>
+                <select value={minutes} onChange={handleMinuteChange} className="time-select">
+                    {['00', '15', '30', '45'].map(m => (
+                        <option key={m} value={m}>{m}</option>
+                    ))}
+                </select>
+            </div>
+        </div>
+    );
+};
 
 const ShiftTemplateSelector = ({ templates, leaveTypes, selectedTemplate, onSelectTemplate, onAddTemplate, onUpdateTemplate, onDeleteTemplate }) => {
     // Default 12h day shift
@@ -25,28 +61,33 @@ const ShiftTemplateSelector = ({ templates, leaveTypes, selectedTemplate, onSele
     };
 
     const handleDoubleClick = (template) => {
+        if (!template) return;
+
         // If template doesn't have start/end (migrating old ones), default them
         setTemplateForm({
-            name: template.name,
-            type: template.type,
-            startTime: template.startTime || '07:00',
-            endTime: template.endTime || '19:00',
-            id: template.id
+            name: template?.name || '',
+            type: template?.type || 'day',
+            startTime: template?.startTime || '07:00',
+            endTime: template?.endTime || '19:00',
+            id: template?.id
         });
-        setEditingId(template.id);
+        setEditingId(template?.id || null);
         setIsModalOpen(true);
     };
 
     const handleSubmit = (e) => {
-        e.preventDefault();
-        if (templateForm.name.trim()) {
-            const duration = calculateDuration(templateForm.startTime, templateForm.endTime);
+        e?.preventDefault();
+        if (templateForm?.name?.trim()) {
+            const duration = calculateDuration(
+                templateForm?.startTime || '07:00',
+                templateForm?.endTime || '19:00'
+            );
             const templateData = { ...templateForm, hours: duration };
 
             if (editingId) {
-                onUpdateTemplate({ ...templateData, id: editingId });
+                onUpdateTemplate?.({ ...templateData, id: editingId });
             } else {
-                onAddTemplate(templateData);
+                onAddTemplate?.(templateData);
             }
             setIsModalOpen(false);
         }
@@ -59,37 +100,19 @@ const ShiftTemplateSelector = ({ templates, leaveTypes, selectedTemplate, onSele
         }
     };
 
-    const TimeSelect = ({ label, value, onChange }) => {
-        const [hours, minutes] = value ? value.split(':') : ['07', '00'];
+    // Memoize templates with calculated hours - only recalculate when templates array changes
+    const templatesWithHours = useMemo(() => {
+        if (!templates || !Array.isArray(templates)) return [];
 
-        const handleHourChange = (e) => {
-            onChange(`${e.target.value}:${minutes}`);
-        };
+        return templates.map(template => {
+            if (!template) return null;
 
-        const handleMinuteChange = (e) => {
-            onChange(`${hours}:${e.target.value}`);
-        };
-
-        return (
-            <div className="input-group">
-                <label>{label}</label>
-                <div className="time-select-container">
-                    <select value={hours} onChange={handleHourChange} className="time-select">
-                        {Array.from({ length: 24 }, (_, i) => {
-                            const h = i.toString().padStart(2, '0');
-                            return <option key={h} value={h}>{h}</option>;
-                        })}
-                    </select>
-                    <span className="time-separator">:</span>
-                    <select value={minutes} onChange={handleMinuteChange} className="time-select">
-                        {['00', '15', '30', '45'].map(m => (
-                            <option key={m} value={m}>{m}</option>
-                        ))}
-                    </select>
-                </div>
-            </div>
-        );
-    };
+            const start = template?.startTime || '07:00';
+            const end = template?.endTime || '19:00';
+            const hours = template?.hours || calculateDuration(start, end);
+            return { ...template, start, end, hours };
+        }).filter(Boolean); // Remove any null entries
+    }, [templates]);
 
     return (
         <div className="template-selector">
@@ -97,28 +120,25 @@ const ShiftTemplateSelector = ({ templates, leaveTypes, selectedTemplate, onSele
 
             <div className="templates-row">
                 {/* Existing Templates */}
-                {templates.map(template => {
-                    const start = template.startTime || '07:00';
-                    const end = template.endTime || '19:00';
-                    // Calculate duration on the fly if missing (for old data)
-                    const hours = template.hours || calculateDuration(start, end);
+                {templatesWithHours.map(template => {
+                    if (!template || !template.id) return null;
 
                     return (
                         <button
                             key={template.id}
-                            className={`template-card ${selectedTemplate && selectedTemplate.id === template.id ? 'selected' : ''}`}
-                            onClick={() => onSelectTemplate(template)}
+                            className={`template-card ${selectedTemplate?.id === template.id ? 'selected' : ''}`}
+                            onClick={() => onSelectTemplate?.(template)}
                             onDoubleClick={() => handleDoubleClick(template)}
                             title="Double-click to edit"
                         >
-                            <div className={`card-top ${template.type}`}>
+                            <div className={`card-top ${template?.type || 'day'}`}>
                                 <div className="card-time">
-                                    <span>{start}</span>
-                                    <span>{end}</span>
+                                    <span>{template?.start || '??:??'}</span>
+                                    <span>{template?.end || '??:??'}</span>
                                 </div>
                             </div>
                             <div className="card-bottom">
-                                <span>{hours}</span>
+                                <span>{template?.hours || 0}</span>
                             </div>
                         </button>
                     );
@@ -136,18 +156,22 @@ const ShiftTemplateSelector = ({ templates, leaveTypes, selectedTemplate, onSele
 
             <h3>Rodzaje dni wolnych</h3>
             <div className="templates-row">
-                {(leaveTypes || []).map(leave => (
-                    <button
-                        key={leave.id}
-                        className={`template-card leave-card ${selectedTemplate && selectedTemplate.id === leave.id ? 'selected' : ''}`}
-                        onClick={() => onSelectTemplate({ ...leave, name: leave.symbol, hours: 0 })} // Map symbol to name for consistency
-                        title={leave.title}
-                    >
-                        <div className="card-top leave">
-                            <span className="leave-symbol">{leave.symbol}</span>
-                        </div>
-                    </button>
-                ))}
+                {(leaveTypes || []).map(leave => {
+                    if (!leave || !leave.id) return null;
+
+                    return (
+                        <button
+                            key={leave.id}
+                            className={`template-card leave-card ${selectedTemplate?.id === leave.id ? 'selected' : ''}`}
+                            onClick={() => onSelectTemplate?.({ ...leave, name: leave?.symbol || leave?.id, hours: 0 })}
+                            title={leave?.title || leave?.symbol || 'Leave'}
+                        >
+                            <div className="card-top leave">
+                                <span className="leave-symbol">{leave?.symbol || '?'}</span>
+                            </div>
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Modal */}

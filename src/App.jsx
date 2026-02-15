@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import EmployeeList from './components/EmployeeList';
 import ScheduleGrid from './components/ScheduleGrid';
@@ -7,7 +7,7 @@ import DataControls from './components/DataControls';
 import SchedulingRules from './components/SchedulingRules';
 import VerificationLog from './components/VerificationLog';
 
-// Define Leave Types outside component to avoid recreation
+// Define Leave Types outside component to avoid recreation (already optimized)
 const LEAVE_TYPES = [
   { id: 'ND', symbol: 'ND', title: 'Dzień wolny z tytułu niedzieli', type: 'leave' },
   { id: 'ŚW', symbol: 'ŚW', title: 'Dzień wolny z tytułu święta', type: 'leave' },
@@ -20,56 +20,113 @@ const LEAVE_TYPES = [
 
 function App() {
   const [employees, setEmployees] = useState(() => {
-    const saved = localStorage.getItem('employees');
-    return saved ? JSON.parse(saved) : [
-      { id: 1, name: 'Alice' },
-      { id: 2, name: 'Bob' },
-      { id: 3, name: 'Charlie' }
-    ];
+    try {
+      const saved = localStorage.getItem('employees');
+      return saved ? JSON.parse(saved) : [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' },
+        { id: 3, name: 'Charlie' }
+      ];
+    } catch (error) {
+      console.error('Failed to load employees from localStorage:', error);
+      return [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' },
+        { id: 3, name: 'Charlie' }
+      ];
+    }
   });
 
   const [schedule, setSchedule] = useState(() => {
-    const saved = localStorage.getItem('schedule');
-    return saved ? JSON.parse(saved) : {};
+    try {
+      const saved = localStorage.getItem('schedule');
+      return saved ? JSON.parse(saved) : {};
+    } catch (error) {
+      console.error('Failed to load schedule from localStorage:', error);
+      return {};
+    }
   });
 
   const [shiftTemplates, setShiftTemplates] = useState(() => {
-    const saved = localStorage.getItem('shiftTemplates');
-    return saved ? JSON.parse(saved) : [
-      { id: 1, name: 'Dzień', type: 'day', hours: 12, startTime: '07:00', endTime: '19:00' },
-      { id: 2, name: 'Noc', type: 'night', hours: 12, startTime: '19:00', endTime: '07:00' }
-    ];
+    try {
+      const saved = localStorage.getItem('shiftTemplates');
+      return saved ? JSON.parse(saved) : [
+        { id: 1, name: 'Dzień', type: 'day', hours: 12, startTime: '07:00', endTime: '19:00' },
+        { id: 2, name: 'Noc', type: 'night', hours: 12, startTime: '19:00', endTime: '07:00' }
+      ];
+    } catch (error) {
+      console.error('Failed to load shift templates from localStorage:', error);
+      return [
+        { id: 1, name: 'Dzień', type: 'day', hours: 12, startTime: '07:00', endTime: '19:00' },
+        { id: 2, name: 'Noc', type: 'night', hours: 12, startTime: '19:00', endTime: '07:00' }
+      ];
+    }
   });
 
   const [schedulingRules, setSchedulingRules] = useState(() => {
-    const saved = localStorage.getItem('schedulingRules');
-    return saved ? JSON.parse(saved) : {
-      hoursAfterDay: 24,
-      hoursAfterNight: 48,
-      sundayRuleEnabled: true,
-      sundayRuleDays: 6
-    };
+    try {
+      const saved = localStorage.getItem('schedulingRules');
+      return saved ? JSON.parse(saved) : {
+        hoursAfterDay: 24,
+        hoursAfterNight: 48,
+        sundayRuleEnabled: true,
+        sundayRuleDays: 6
+      };
+    } catch (error) {
+      console.error('Failed to load scheduling rules from localStorage:', error);
+      return {
+        hoursAfterDay: 24,
+        hoursAfterNight: 48,
+        sundayRuleEnabled: true,
+        sundayRuleDays: 6
+      };
+    }
   });
 
   const [verificationIssues, setVerificationIssues] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedTemplate, setSelectedTemplate] = useState(shiftTemplates[0]);
+  const [saveError, setSaveError] = useState(null);
 
-  // Auto-save effects
+  // Auto-save effects with error handling
   useEffect(() => {
-    localStorage.setItem('employees', JSON.stringify(employees));
+    try {
+      localStorage.setItem('employees', JSON.stringify(employees));
+      setSaveError(null);
+    } catch (error) {
+      console.error('Failed to save employees:', error);
+      setSaveError('Nie udało się zapisać danych pracowników. Sprawdź czy masz wystarczająco miejsca w przeglądarce.');
+    }
   }, [employees]);
 
   useEffect(() => {
-    localStorage.setItem('schedule', JSON.stringify(schedule));
+    try {
+      localStorage.setItem('schedule', JSON.stringify(schedule));
+      setSaveError(null);
+    } catch (error) {
+      console.error('Failed to save schedule:', error);
+      setSaveError('Nie udało się zapisać grafiku. Sprawdź czy masz wystarczająco miejsca w przeglądarce.');
+    }
   }, [schedule]);
 
   useEffect(() => {
-    localStorage.setItem('shiftTemplates', JSON.stringify(shiftTemplates));
+    try {
+      localStorage.setItem('shiftTemplates', JSON.stringify(shiftTemplates));
+      setSaveError(null);
+    } catch (error) {
+      console.error('Failed to save shift templates:', error);
+      setSaveError('Nie udało się zapisać szablonów zmian. Sprawdź czy masz wystarczająco miejsca w przeglądarce.');
+    }
   }, [shiftTemplates]);
 
   useEffect(() => {
-    localStorage.setItem('schedulingRules', JSON.stringify(schedulingRules));
+    try {
+      localStorage.setItem('schedulingRules', JSON.stringify(schedulingRules));
+      setSaveError(null);
+    } catch (error) {
+      console.error('Failed to save scheduling rules:', error);
+      setSaveError('Nie udało się zapisać zasad grafikowania. Sprawdź czy masz wystarczająco miejsca w przeglądarce.');
+    }
   }, [schedulingRules]);
 
   useEffect(() => {
@@ -93,72 +150,93 @@ function App() {
     }
   }, [shiftTemplates, selectedTemplate]);
 
-  const handlePrevMonth = () => {
+  const handlePrevMonth = useCallback(() => {
     setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-  };
+  }, []);
 
-  const handleNextMonth = () => {
+  const handleNextMonth = useCallback(() => {
     setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-  };
+  }, []);
 
   const handleExportData = () => {
-    const data = {
-      employees,
-      schedule,
-      shiftTemplates,
-      schedulingRules
-    };
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'work-schedule.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImportData = (data) => {
-    if (data && Array.isArray(data.employees)) setEmployees(data.employees);
-    if (data && data.schedule && typeof data.schedule === 'object') setSchedule(data.schedule);
-    if (data && Array.isArray(data.shiftTemplates)) setShiftTemplates(data.shiftTemplates);
-    if (data && data.schedulingRules && typeof data.schedulingRules === 'object') {
-      setSchedulingRules(data.schedulingRules);
+    try {
+      const data = {
+        employees,
+        schedule,
+        shiftTemplates,
+        schedulingRules
+      };
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'work-schedule.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      setSaveError(null);
+    } catch (error) {
+      console.error('Failed to export data:', error);
+      setSaveError('Nie udało się wyeksportować danych. Spróbuj ponownie.');
     }
   };
 
-  const handleAddEmployee = (name, maxHours = 168) => {
+  const handleImportData = (data) => {
+    try {
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid data format');
+      }
+      if (data.employees && Array.isArray(data.employees)) setEmployees(data.employees);
+      if (data.schedule && typeof data.schedule === 'object') setSchedule(data.schedule);
+      if (data.shiftTemplates && Array.isArray(data.shiftTemplates)) setShiftTemplates(data.shiftTemplates);
+      if (data.schedulingRules && typeof data.schedulingRules === 'object') {
+        setSchedulingRules(data.schedulingRules);
+      }
+      setSaveError(null);
+    } catch (error) {
+      console.error('Failed to import data:', error);
+      setSaveError('Nie udało się zaimportować danych. Sprawdź czy plik jest prawidłowy.');
+    }
+  };
+
+  const handleAddEmployee = useCallback((name, maxHours = 168) => {
     const newEmployee = {
       id: Date.now(),
       name: name,
       maxHours: Number(maxHours)
     };
-    setEmployees([...employees, newEmployee]);
-  };
+    setEmployees(prev => [...prev, newEmployee]);
+  }, []);
 
-  const handleAddShiftTemplate = (template) => {
-    setShiftTemplates([...shiftTemplates, { ...template, id: Date.now() }]);
-  };
+  const handleAddShiftTemplate = useCallback((template) => {
+    setShiftTemplates(prev => [...prev, { ...template, id: Date.now() }]);
+  }, []);
 
-  const handleUpdateShiftTemplate = (updatedTemplate) => {
-    setShiftTemplates(shiftTemplates.map(t =>
+  const handleUpdateShiftTemplate = useCallback((updatedTemplate) => {
+    setShiftTemplates(prev => prev.map(t =>
       t.id === updatedTemplate.id ? updatedTemplate : t
     ));
     // Also update selectedTemplate if it was the one edited
-    if (selectedTemplate && selectedTemplate.id === updatedTemplate.id) {
-      setSelectedTemplate(updatedTemplate);
-    }
-  };
+    setSelectedTemplate(prev => {
+      if (prev && prev.id === updatedTemplate.id) {
+        return updatedTemplate;
+      }
+      return prev;
+    });
+  }, []);
 
-  const handleDeleteShiftTemplate = (templateId) => {
+  const handleDeleteShiftTemplate = useCallback((templateId) => {
     if (confirm('Are you sure you want to delete this template? All assigned shifts of this type will be removed.')) {
       // 1. Remove from templates list
-      setShiftTemplates(shiftTemplates.filter(t => t.id !== templateId));
+      setShiftTemplates(prev => prev.filter(t => t.id !== templateId));
 
       // 2. Clear from selected if needed
-      if (selectedTemplate && selectedTemplate.id === templateId) {
-        setSelectedTemplate(null);
-      }
+      setSelectedTemplate(prev => {
+        if (prev && prev.id === templateId) {
+          return null;
+        }
+        return prev;
+      });
 
       // 3. Remove all instances from schedule
       setSchedule(prev => {
@@ -184,10 +262,10 @@ function App() {
         return newSchedule;
       });
     }
-  };
+  }, []);
 
-  const handleRemoveEmployee = (id) => {
-    setEmployees(employees.filter((employee) => employee.id !== id));
+  const handleRemoveEmployee = useCallback((id) => {
+    setEmployees(prev => prev.filter((employee) => employee.id !== id));
     // Also remove from schedule
     setSchedule(prev => {
       const newSchedule = { ...prev };
@@ -204,9 +282,9 @@ function App() {
       });
       return newSchedule;
     });
-  };
+  }, []);
 
-  const handleClearSchedule = () => {
+  const handleClearSchedule = useCallback(() => {
     if (confirm('Are you sure you want to clear the entire schedule for the CURRENT MONTH? This cannot be undone.')) {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth();
@@ -223,11 +301,14 @@ function App() {
         return newSchedule;
       });
     }
-  };
+  }, [currentDate]);
 
   const handleVerifySchedule = () => {
     const formatDateDMY = (dateKey) => {
-      const [y, m, d] = dateKey.split('-');
+      if (!dateKey || typeof dateKey !== 'string') return '??-??-????';
+      const parts = dateKey.split('-');
+      if (parts.length !== 3) return dateKey;
+      const [y, m, d] = parts;
       return `${d}-${m}-${y}`;
     };
 
@@ -242,58 +323,86 @@ function App() {
       };
     });
 
+    if (!employees || !Array.isArray(employees)) {
+      issues.push({ type: 'error', message: 'Brak listy pracowników do weryfikacji.' });
+      setVerificationIssues(issues);
+      return;
+    }
+
     employees.forEach(emp => {
+      if (!emp || !emp.id) return; // Skip invalid employee entries
       let totalHours = 0;
       let previousShiftEnd = null;
       let previousShiftType = null;
       let sundayWorkDates = [];
 
       days.forEach((day, index) => {
+        if (!day || !day.dateKey) return; // Skip invalid day entries
+
         const dateKey = day.dateKey;
-        const shift = schedule[dateKey]?.[emp.id];
+        const shift = schedule?.[dateKey]?.[emp.id];
 
         if (shift) {
           // Check for 'leave' type which counts as 0 hours usually, but let's be safe
           if (shift.type !== 'leave') {
-            totalHours += Number(shift.hours || 0);
+            totalHours += Number(shift?.hours || 0);
 
             if (previousShiftEnd) {
-              const startT = shift.startTime || (shift.type === 'day' ? '07:00' : '19:00');
-              const endT = shift.endTime || (shift.type === 'day' ? '19:00' : '07:00');
+              const startT = shift?.startTime || (shift?.type === 'day' ? '07:00' : '19:00');
+              const endT = shift?.endTime || (shift?.type === 'day' ? '19:00' : '07:00');
+
+              // Validate time strings before creating Date
+              if (!startT || !endT) {
+                console.warn(`Invalid shift times for employee ${emp.name} on ${dateKey}`);
+                return;
+              }
+
               const currentShiftStart = new Date(`${dateKey}T${startT}`);
-              // Adjust for previous day
+
+              // Validate date creation
+              if (isNaN(currentShiftStart.getTime())) {
+                console.warn(`Invalid date created for ${dateKey}T${startT}`);
+                return;
+              }
+
               const diffMinutes = (currentShiftStart - previousShiftEnd) / (1000 * 60);
               const diffHours = diffMinutes / 60;
 
               // Determine required break based on previous shift type
               let requiredBreak = 11; // Statutory minimum
               if (previousShiftType === 'night') {
-                requiredBreak = Number(schedulingRules.hoursAfterNight) || 11;
+                requiredBreak = Number(schedulingRules?.hoursAfterNight) || 11;
               } else if (previousShiftType === 'day') {
-                requiredBreak = Number(schedulingRules.hoursAfterDay) || 11;
+                requiredBreak = Number(schedulingRules?.hoursAfterDay) || 11;
               }
 
-              if (diffHours < requiredBreak) {
+              if (diffHours < requiredBreak && index > 0) {
+                const prevDay = days[index - 1];
                 issues.push({
                   type: 'error',
                   issue: 'insufficient_rest',
                   employeeId: emp.id,
-                  dateKeys: [days[index - 1].dateKey, dateKey],
-                  message: `Brak wymaganego odpoczynku (${requiredBreak}h) dla pracownika ${emp.name}. Odpoczynek wynosił tylko ${diffHours.toFixed(1)}h między ${formatDateDMY(days[index - 1].dateKey)} a ${formatDateDMY(dateKey)}.`
+                  dateKeys: [prevDay?.dateKey || dateKey, dateKey],
+                  message: `Brak wymaganego odpoczynku (${requiredBreak}h) dla pracownika ${emp?.name || 'Unknown'}. Odpoczynek wynosił tylko ${diffHours.toFixed(1)}h między ${formatDateDMY(prevDay?.dateKey)} a ${formatDateDMY(dateKey)}.`
                 });
               }
             }
 
             // Set current shift end for next iteration
-            const startT = shift.startTime || (shift.type === 'day' ? '07:00' : '19:00');
-            const endT = shift.endTime || (shift.type === 'day' ? '19:00' : '07:00');
-            let shiftEnd = new Date(`${dateKey}T${endT}`);
-            if ((Number(shift.hours) > 0 || shift.type === 'night') && endT < startT) {
-              // Overnight shift, ends next day
-              shiftEnd.setDate(shiftEnd.getDate() + 1);
+            const startT = shift?.startTime || (shift?.type === 'day' ? '07:00' : '19:00');
+            const endT = shift?.endTime || (shift?.type === 'day' ? '19:00' : '07:00');
+
+            if (startT && endT) {
+              let shiftEnd = new Date(`${dateKey}T${endT}`);
+              if (!isNaN(shiftEnd.getTime())) {
+                if ((Number(shift?.hours || 0) > 0 || shift?.type === 'night') && endT < startT) {
+                  // Overnight shift, ends next day
+                  shiftEnd.setDate(shiftEnd.getDate() + 1);
+                }
+                previousShiftEnd = shiftEnd;
+                previousShiftType = shift?.type;
+              }
             }
-            previousShiftEnd = shiftEnd;
-            previousShiftType = shift.type;
 
             // Sunday Check Collection
             if (day.isSunday) {
@@ -310,18 +419,20 @@ function App() {
       });
 
       // 1. Max Hours Check
-      const max = emp.maxHours || 168;
+      const max = emp?.maxHours || 168;
       if (totalHours > max) {
         issues.push({
           type: 'error',
-          message: `Przekroczony limit godzin dla pracownika ${emp.name}: ${totalHours}/${max}h.`
+          message: `Przekroczony limit godzin dla pracownika ${emp?.name || 'Unknown'}: ${totalHours}/${max}h.`
         });
       }
 
       // 3. Sunday Rule Check (if enabled)
-      if (schedulingRules.sundayRuleEnabled) {
-        const range = schedulingRules.sundayRuleDays || 6;
+      if (schedulingRules?.sundayRuleEnabled && Array.isArray(sundayWorkDates)) {
+        const range = schedulingRules?.sundayRuleDays || 6;
         sundayWorkDates.forEach(({ dateKey, index }) => {
+          if (!dateKey || typeof index !== 'number') return;
+
           // Check range +/- X days for a free day (no shift assigned)
           // Simple heuristic: Look for at least one day without a shift or with a 'leave' shift
           let hasFreeDay = false;
@@ -330,9 +441,12 @@ function App() {
 
           for (let i = startSearch; i <= endSearch; i++) {
             if (i === index) continue; // Skip the Sunday itself
-            const dKey = days[i].dateKey;
-            const s = schedule[dKey]?.[emp.id];
-            if (!s || s.type === 'leave') {
+            const dayAtIndex = days[i];
+            if (!dayAtIndex || !dayAtIndex.dateKey) continue;
+
+            const dKey = dayAtIndex.dateKey;
+            const s = schedule?.[dKey]?.[emp.id];
+            if (!s || s?.type === 'leave') {
               hasFreeDay = true;
               break;
             }
@@ -344,7 +458,7 @@ function App() {
               issue: 'sunday_rule',
               employeeId: emp.id,
               dateKeys: [dateKey],
-              message: `Pracownik ${emp.name} pracuje w niedzielę (${dateKey}) i nie ma dnia wolnego w ciągu +/- ${range} dni.`
+              message: `Pracownik ${emp?.name || 'Unknown'} pracuje w niedzielę (${formatDateDMY(dateKey)}) i nie ma dnia wolnego w ciągu +/- ${range} dni.`
             });
           }
         });
@@ -358,16 +472,16 @@ function App() {
     setVerificationIssues(issues);
   };
 
-  const handleUpdateEmployee = (id, field, value) => {
-    setEmployees(employees.map(emp =>
+  const handleUpdateEmployee = useCallback((id, field, value) => {
+    setEmployees(prev => prev.map(emp =>
       emp.id === id ? { ...emp, [field]: value } : emp
     ));
-  };
+  }, []);
 
-  const handleApplyShift = (dateKey, employeeId) => {
-    if (!selectedTemplate) return; // Do nothing if no template selected
-
+  const handleApplyShift = useCallback((dateKey, employeeId) => {
     setSchedule(prev => {
+      if (!selectedTemplate) return prev; // Do nothing if no template selected
+
       const daySchedule = { ...(prev[dateKey] || {}) };
       const currentShift = daySchedule[employeeId];
 
@@ -391,13 +505,21 @@ function App() {
         [dateKey]: daySchedule
       };
     });
-  };
+  }, [selectedTemplate]);
 
   const [activeTab, setActiveTab] = useState('planning');
 
   return (
     <div className="app-container">
       <h1>Planer zmian</h1>
+
+      {saveError && (
+        <div className="error-banner">
+          <span className="error-icon">⚠️</span>
+          <span className="error-message">{saveError}</span>
+          <button className="error-close" onClick={() => setSaveError(null)}>✕</button>
+        </div>
+      )}
 
       <div className="tabs">
         <button
